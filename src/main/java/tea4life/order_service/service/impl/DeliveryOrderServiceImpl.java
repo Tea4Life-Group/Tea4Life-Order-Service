@@ -68,7 +68,8 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Đơn hàng đã được tài xế khác nhận");
         }
 
-        order.setDriverKeycloakId(resolveCurrentKeycloakId());
+        String currentKeycloakId = resolveCurrentKeycloakId();
+        order.setDriverKeycloakId(currentKeycloakId);
         order.setStatus(OrderStatus.DELIVERING);
         return toDeliveryOrderResponse(orderRepository.save(order));
     }
