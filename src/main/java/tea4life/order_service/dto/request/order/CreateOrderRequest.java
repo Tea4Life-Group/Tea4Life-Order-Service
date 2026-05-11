@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import tea4life.order_service.model.constant.PaymentMethod;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public record CreateOrderRequest(
@@ -35,6 +36,8 @@ public record CreateOrderRequest(
 
         @Valid
         @NotEmpty(message = "items không được để trống")
-        List<OrderItemRequest> items
+        List<OrderItemRequest> items,
+
+        BigDecimal shippingFee
 ) {
 }

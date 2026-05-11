@@ -80,4 +80,7 @@ public class Order extends BaseEntity {
     Set<OrderItem> orderItems;
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     Payment payment;
+
+    @Column(nullable = false, name = "shipping_fee")
+    BigDecimal shippingFee = BigDecimal.ZERO;
 }

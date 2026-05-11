@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import tea4life.order_service.model.constant.PaymentMethod;
 
+import java.math.BigDecimal;
+
 public record CheckoutOrderRequest(
         @NotBlank(message = "receiverName không được để trống")
         String receiverName,
@@ -27,6 +29,8 @@ public record CheckoutOrderRequest(
         @NotNull(message = "paymentMethod không được để trống")
         PaymentMethod paymentMethod,
 
-        String voucherCode
+        String voucherCode,
+
+        BigDecimal shippingFee
 ) {
 }
