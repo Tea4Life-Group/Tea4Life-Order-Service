@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.experimental.NonFinal;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +34,8 @@ import tea4life.order_service.repository.CartRepository;
 import tea4life.order_service.repository.OrderRepository;
 import tea4life.order_service.repository.StoreRepository;
 import tea4life.order_service.service.OrderService;
+import vn.payos.PayOS;
+import vn.payos.model.v2.paymentRequests.CreatePaymentLinkRequest;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
@@ -41,6 +46,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Transactional
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     // Repository
@@ -50,6 +56,14 @@ public class OrderServiceImpl implements OrderService {
 
     // Mapper / Serializer
     ObjectMapper objectMapper;
+
+    // Payment
+    PayOS payOS;
+
+    // Domain frontend
+    @NonFinal
+    @Value("${app.frontend.url}")
+    String frontendDomain;
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest request) {
@@ -65,7 +79,8 @@ public class OrderServiceImpl implements OrderService {
                 request.ward(),
                 request.detail(),
                 request.paymentMethod(),
-                buildOrderItemsFromRequest(null, request.items())
+                buildOrderItemsFromRequest(null, request.items()),
+                request.shippingFee()
         );
     }
 
@@ -89,7 +104,8 @@ public class OrderServiceImpl implements OrderService {
                 request.ward(),
                 request.detail(),
                 request.paymentMethod(),
-                buildOrderItemsFromCart(null, cartItems)
+                buildOrderItemsFromCart(null, cartItems),
+                request.shippingFee()
         );
 
         cart.getCartItems().clear();
@@ -192,7 +208,8 @@ public class OrderServiceImpl implements OrderService {
             String ward,
             String detail,
             tea4life.order_service.model.constant.PaymentMethod paymentMethod,
-            Set<OrderItem> orderItems
+            Set<OrderItem> orderItems,
+            BigDecimal shippingFee
     ) {
         Order order = new Order();
         order.setStatus(OrderStatus.PENDING);
@@ -205,6 +222,7 @@ public class OrderServiceImpl implements OrderService {
         order.setDetail(detail.trim());
         order.setPaymentMethod(paymentMethod);
         order.setPaymentStatus(PaymentStatus.PENDING);
+        order.setShippingFee(shippingFee != null ? shippingFee : BigDecimal.ZERO);
 
         orderItems.forEach(item -> item.setOrder(order));
 
@@ -213,27 +231,70 @@ public class OrderServiceImpl implements OrderService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         order.setPriceBeforeDiscount(priceBeforeDiscount);
-        order.setFinalPrice(priceBeforeDiscount);
+
+        BigDecimal finalPrice = priceBeforeDiscount.add(order.getShippingFee());
+        order.setFinalPrice(finalPrice);
+
         order.setOrderItems(orderItems);
 
         Payment payment = new Payment();
         payment.setKeycloakId(currentKeycloakId);
-        payment.setAmount(priceBeforeDiscount);
+        payment.setAmount(finalPrice);
         payment.setStatus(PaymentStatus.PENDING);
         payment.setOrder(order);
         order.setPayment(payment);
 
         Order savedOrder = orderRepository.save(order);
         savedOrder.setOrderCode(buildOrderCode(savedOrder.getId()));
+        savedOrder = orderRepository.save(savedOrder);
 
-        return toOrderResponse(orderRepository.save(savedOrder));
+        String checkoutUrl = null;
+
+        if (paymentMethod == tea4life.order_service.model.constant.PaymentMethod.BANKING) {
+            try {
+                String fullIdStr = String.valueOf(savedOrder.getId());
+                long payosOrderCode = Long.parseLong(fullIdStr.substring(Math.max(0, fullIdStr.length() - 8)));
+
+                long amount = savedOrder.getFinalPrice().longValue();
+                if (amount < 2000L) {
+                    throw new IllegalArgumentException("Số tiền thanh toán chuyển khoản phải từ 2.000 VNĐ trở lên");
+                }
+
+                String description = "T4L " + payosOrderCode;
+
+                CreatePaymentLinkRequest paymentRequest = CreatePaymentLinkRequest.builder()
+                        .orderCode(payosOrderCode)
+                        .amount(amount)
+                        .description(description)
+                        .returnUrl(frontendDomain + "/payment/success")
+                        .cancelUrl(frontendDomain + "/payment/cancel")
+                        .build();
+
+                // Gọi hàm create của V2
+                var data = payOS.paymentRequests().create(paymentRequest);
+                checkoutUrl = data.getCheckoutUrl();
+
+            } catch (Exception e) {
+                log.error("Lỗi tạo link PAYOS cho Order ID: " + savedOrder.getId(), e);
+                log.error(e.getMessage(), e);
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Lỗi PayOS: " + e.getMessage(), e);
+            }
+        }
+
+        return toOrderResponse(savedOrder, checkoutUrl);
     }
 
     // =================================================
     // Mapping
     // =================================================
 
+    // Hàm 1: Dành cho các API thông thường (không cần link thanh toán)
     private OrderResponse toOrderResponse(Order order) {
+        return toOrderResponse(order, null);
+    }
+
+    // Hàm 2: Dành cho API Tạo đơn hàng (có link thanh toán)
+    private OrderResponse toOrderResponse(Order order, String checkoutUrl) {
         List<OrderItemResponse> itemResponses = order.getOrderItems() == null
                 ? List.of()
                 : order.getOrderItems().stream()
@@ -257,7 +318,8 @@ public class OrderServiceImpl implements OrderService {
                 order.getPaymentStatus(),
                 order.getNote(),
                 order.getCreatedAt(),
-                itemResponses
+                itemResponses,
+                checkoutUrl
         );
     }
 

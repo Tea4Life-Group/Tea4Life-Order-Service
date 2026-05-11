@@ -28,4 +28,5 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByStatusAndDriverKeycloakIdOrderByCreatedAtDesc(OrderStatus status, String driverKeycloakId);
 
     Optional<Order> findByIdAndDriverKeycloakId(Long id, String driverKeycloakId);
+    Optional<Order> findByOrderCodeEndingWith(String suffix);
 }
