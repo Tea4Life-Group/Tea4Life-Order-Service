@@ -37,7 +37,6 @@ public class PayOSWebhookController {
             var data = payOS.webhooks().verify(webhook);
 
             log.info("Đã verify chữ ký thành công!");
-            log.info("Dữ liệu nhận được - Code: {}, OrderCode: {}, Số tiền: {}", data.getCode(), data.getOrderCode(), data.getAmount());
 
             if ("00".equals(data.getCode())) {
                 String shortOrderCode = String.valueOf(data.getOrderCode());
