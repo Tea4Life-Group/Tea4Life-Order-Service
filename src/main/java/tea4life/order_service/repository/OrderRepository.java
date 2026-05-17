@@ -36,6 +36,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
+    List<Order> findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(Instant start, Instant end);
+
     long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(Instant start, Instant end);
 
     long countByStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(OrderStatus status, Instant start, Instant end);
