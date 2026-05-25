@@ -120,6 +120,10 @@ public class StoreServiceImpl implements StoreService {
     @Override
     @Transactional(readOnly = true)
     public List<StoreResponse> findMyStores() {
+        if (isAdmin()) {
+            return findAllStores();
+        }
+
         String keycloakId = resolveCurrentKeycloakId();
         return storeEmployeeRepository.findByKeycloakIdOrderByCreatedAtAsc(keycloakId).stream()
                 .map(StoreEmployee::getStore)
@@ -179,6 +183,11 @@ public class StoreServiceImpl implements StoreService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Không xác định được người dùng hiện tại");
         }
         return context.getKeycloakId().trim();
+    }
+
+    private boolean isAdmin() {
+        UserContext context = UserContext.get();
+        return context != null && "ADMIN".equalsIgnoreCase(context.getRole());
     }
 
     private String normalizeRequiredKeycloakId(String keycloakId) {

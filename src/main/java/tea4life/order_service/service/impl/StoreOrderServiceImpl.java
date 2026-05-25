@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tea4life.order_service.context.UserContext;
 import tea4life.order_service.dto.response.order.StoreOrderItemResponse;
 import tea4life.order_service.dto.response.order.StoreOrderResponse;
 import tea4life.order_service.model.constant.OrderStatus;
@@ -95,6 +96,10 @@ public class StoreOrderServiceImpl implements StoreOrderService {
     }
 
     private void ensureCurrentUserBelongsToStore(Long storeId) {
+        if (isAdmin()) {
+            return;
+        }
+
         String keycloakId = resolveCurrentKeycloakId();
         if (storeEmployeeRepository.findByStoreIdAndKeycloakId(storeId, keycloakId).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không thuộc chi nhánh này");
@@ -106,11 +111,16 @@ public class StoreOrderServiceImpl implements StoreOrderService {
     // =================================================
 
     private String resolveCurrentKeycloakId() {
-        tea4life.order_service.context.UserContext context = tea4life.order_service.context.UserContext.get();
+        UserContext context = UserContext.get();
         if (context == null || context.getKeycloakId() == null || context.getKeycloakId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Không xác định được người dùng hiện tại");
         }
         return context.getKeycloakId().trim();
+    }
+
+    private boolean isAdmin() {
+        UserContext context = UserContext.get();
+        return context != null && "ADMIN".equalsIgnoreCase(context.getRole());
     }
 
     private void ensureStatus(Order order, OrderStatus expectedStatus, String message) {

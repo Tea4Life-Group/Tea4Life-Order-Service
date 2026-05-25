@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Admin 2/7/2026
@@ -35,6 +36,7 @@ public class UserContextFilter implements Filter {
 
         String email = httpRequest.getHeader("X-User-Email");
         String userKeycloakId = httpRequest.getHeader("X-User-KeycloakId");
+        String role = normalizeRole(httpRequest.getHeader("X-User-Role"));
         String authoritiesRaw = httpRequest.getHeader("X-User-Authorities");
 
         /**
@@ -54,6 +56,15 @@ public class UserContextFilter implements Filter {
                     .toList();
         }
 
+        if (!role.isBlank()) {
+            authorities = Stream.concat(
+                            authorities.stream(),
+                            Stream.of(new SimpleGrantedAuthority(role))
+                    )
+                    .distinct()
+                    .toList();
+        }
+
         var auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
 
@@ -68,6 +79,7 @@ public class UserContextFilter implements Filter {
         UserContext context = UserContext.builder()
                 .email(email)
                 .keycloakId(userKeycloakId)
+                .role(role)
                 .build();
 
         UserContext.set(context);
@@ -79,5 +91,9 @@ public class UserContextFilter implements Filter {
             SecurityContextHolder.clearContext();
         }
 
+    }
+
+    private String normalizeRole(String role) {
+        return role == null ? "" : role.replaceFirst("^ROLE_", "").toUpperCase();
     }
 }

@@ -43,7 +43,11 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryOrderResponse> findShippingOrders() {
-        return orderRepository.findByStatusAndDriverKeycloakIdOrderByCreatedAtDesc(OrderStatus.DELIVERING, resolveCurrentKeycloakId()).stream()
+        List<Order> orders = isAdmin()
+                ? orderRepository.findByStatusOrderByCreatedAtDesc(OrderStatus.DELIVERING)
+                : orderRepository.findByStatusAndDriverKeycloakIdOrderByCreatedAtDesc(OrderStatus.DELIVERING, resolveCurrentKeycloakId());
+
+        return orders.stream()
                 .map(this::toDeliveryOrderResponse)
                 .toList();
     }
@@ -53,7 +57,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     public DeliveryOrderResponse findOrderById(Long orderId) {
         Order order = findOrderEntityById(orderId);
 
-        if (order.getStatus() == OrderStatus.DELIVERING || order.getStatus() == OrderStatus.COMPLETED) {
+        if (!isAdmin() && (order.getStatus() == OrderStatus.DELIVERING || order.getStatus() == OrderStatus.COMPLETED)) {
             ensureCurrentDriverOwnsOrder(order);
         }
 
@@ -128,6 +132,11 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         if (order.getDriverKeycloakId() == null || !order.getDriverKeycloakId().equals(currentKeycloakId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không được phép xem đơn này");
         }
+    }
+
+    private boolean isAdmin() {
+        UserContext context = UserContext.get();
+        return context != null && "ADMIN".equalsIgnoreCase(context.getRole());
     }
 
     // =================================================

@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tea4life.order_service.client.UserInternalClient;
 import tea4life.order_service.dto.request.driver.UpsertDriverRequest;
 import tea4life.order_service.dto.response.driver.DriverResponse;
 import tea4life.order_service.model.driver.Driver;
@@ -24,6 +25,9 @@ public class DriverServiceImpl implements DriverService {
 
     // Repository
     DriverRepository driverRepository;
+    UserInternalClient userInternalClient;
+
+    static final String DRIVER_ROLE = "DRIVER";
 
     @Override
     @Transactional(readOnly = true)
@@ -45,7 +49,9 @@ public class DriverServiceImpl implements DriverService {
         applyRequestToDriver(driver, request);
 
         try {
-            return toDriverResponse(driverRepository.save(driver));
+            DriverResponse response = toDriverResponse(driverRepository.save(driver));
+            syncDriverRole(driver.getKeycloakId());
+            return response;
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "keycloakId của driver đã tồn tại", ex);
         }
@@ -57,7 +63,9 @@ public class DriverServiceImpl implements DriverService {
         applyRequestToDriver(driver, request);
 
         try {
-            return toDriverResponse(driverRepository.save(driver));
+            DriverResponse response = toDriverResponse(driverRepository.save(driver));
+            syncDriverRole(driver.getKeycloakId());
+            return response;
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "keycloakId của driver đã tồn tại", ex);
         }
@@ -85,6 +93,18 @@ public class DriverServiceImpl implements DriverService {
         driver.setKeycloakId(request.keycloakId().trim());
         driver.setFullName(request.fullName().trim());
         driver.setPhone(request.phone().trim());
+    }
+
+    private void syncDriverRole(String keycloakId) {
+        try {
+            userInternalClient.assignRole(keycloakId, DRIVER_ROLE);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Đã lưu tài xế thất bại vì không đồng bộ được role DRIVER",
+                    ex
+            );
+        }
     }
 
     private DriverResponse toDriverResponse(Driver driver) {

@@ -18,6 +18,7 @@ public class UserContext {
 
     String email;
     String keycloakId;
+    String role;
 
     static final ThreadLocal<UserContext> HOLDER = new ThreadLocal<>();
 
