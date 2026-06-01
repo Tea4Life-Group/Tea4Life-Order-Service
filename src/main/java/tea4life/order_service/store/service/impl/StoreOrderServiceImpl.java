@@ -1,5 +1,8 @@
 package tea4life.order_service.store.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -8,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import tea4life.order_service.context.UserContext;
+import tea4life.order_service.dto.response.order.OrderItemOptionResponse;
 import tea4life.order_service.dto.response.order.StoreOrderItemResponse;
 import tea4life.order_service.dto.response.order.StoreOrderResponse;
 import tea4life.order_service.model.constant.OrderStatus;
@@ -36,6 +40,7 @@ public class StoreOrderServiceImpl implements StoreOrderService {
     StoreEmployeeRepository storeEmployeeRepository;
     OrderRecommendationEventPublisher orderRecommendationEventPublisher;
     OrderStatusPolicy orderStatusPolicy;
+    ObjectMapper objectMapper;
 
     @Override
     @Transactional(readOnly = true)
@@ -169,10 +174,24 @@ public class StoreOrderServiceImpl implements StoreOrderService {
         return new StoreOrderItemResponse(
                 item.getId() == null ? null : item.getId().toString(),
                 item.getProductId() == null ? null : item.getProductId().toString(),
+                fromSelectedOptionsSnapshot(item.getSelectedOptionsSnapshot()),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getSubTotal()
         );
+    }
+
+    private List<OrderItemOptionResponse> fromSelectedOptionsSnapshot(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(snapshot, new TypeReference<List<OrderItemOptionResponse>>() {
+            });
+        } catch (JsonProcessingException ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Không đọc được selectedOptions snapshot", ex);
+        }
     }
 }
 
