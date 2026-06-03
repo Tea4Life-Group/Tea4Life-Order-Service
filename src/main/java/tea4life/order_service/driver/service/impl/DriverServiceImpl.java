@@ -1,8 +1,10 @@
 package tea4life.order_service.driver.service.impl;
 
+import feign.FeignException;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Transactional
+@Slf4j
 public class DriverServiceImpl implements DriverService {
 
     // Repository
@@ -45,15 +48,23 @@ public class DriverServiceImpl implements DriverService {
 
     @Override
     public DriverResponse createDriver(UpsertDriverRequest request) {
-        Driver driver = new Driver();
-        applyRequestToDriver(driver, request);
-
         try {
+            Driver driver = prepareDriverForCreate(request);
             DriverResponse response = toDriverResponse(driverRepository.save(driver));
             syncDriverRole(driver.getKeycloakId());
             return response;
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "keycloakId của driver đã tồn tại", ex);
+        }
+    }
+
+    @Override
+    public DriverResponse syncDriverFromUserRole(UpsertDriverRequest request) {
+        try {
+            Driver driver = prepareDriverForRoleSync(request);
+            return toDriverResponse(driverRepository.save(driver));
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Không thể đồng bộ tài xế từ role DRIVER", ex);
         }
     }
 
@@ -73,7 +84,9 @@ public class DriverServiceImpl implements DriverService {
 
     @Override
     public void deleteDriver(Long id) {
-        driverRepository.delete(findDriverEntityById(id));
+        Driver driver = findDriverEntityById(id);
+        driverRepository.delete(driver);
+        syncDeletedDriverRole(driver.getKeycloakId());
     }
 
     // =================================================
@@ -90,18 +103,120 @@ public class DriverServiceImpl implements DriverService {
     // =================================================
 
     private void applyRequestToDriver(Driver driver, UpsertDriverRequest request) {
-        driver.setKeycloakId(request.keycloakId().trim());
+        driver.setKeycloakId(normalizeKeycloakId(request.keycloakId()));
         driver.setFullName(request.fullName().trim());
         driver.setPhone(request.phone().trim());
     }
 
+    private Driver prepareDriverForCreate(UpsertDriverRequest request) {
+        Driver driver = findDriverIncludingDeleted(request, true);
+        applyRequestToDriver(driver, request);
+        return driver;
+    }
+
+    private Driver prepareDriverForRoleSync(UpsertDriverRequest request) {
+        Driver driver = findDriverIncludingDeleted(request, false);
+        applyRequestToDriver(driver, request);
+        return driver;
+    }
+
+    private Driver findDriverIncludingDeleted(UpsertDriverRequest request, boolean rejectActiveDriver) {
+        String keycloakId = normalizeKeycloakId(request.keycloakId());
+        return driverRepository.findByKeycloakIdIncludingDeleted(keycloakId)
+                .map(existing -> {
+                    if (!existing.isDeleted() && rejectActiveDriver) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "keycloakId của driver đã tồn tại");
+                    }
+                    existing.setDeleted(false);
+                    return existing;
+                })
+                .orElseGet(Driver::new);
+    }
+
+    private String normalizeKeycloakId(String keycloakId) {
+        if (keycloakId == null || keycloakId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "keycloakId không được để trống");
+        }
+        return keycloakId.trim();
+    }
+
     private void syncDriverRole(String keycloakId) {
         try {
-            userInternalClient.assignRole(keycloakId, DRIVER_ROLE);
+            var response = userInternalClient.assignRole(keycloakId, DRIVER_ROLE);
+            if (response != null && response.getErrorCode() != null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        response.getErrorMessage() == null
+                                ? "User Service trả lỗi khi đồng bộ role DRIVER"
+                                : response.getErrorMessage()
+                );
+            }
+        } catch (FeignException ex) {
+            String responseBody = ex.contentUTF8();
+            log.error(
+                    "Không đồng bộ được role DRIVER cho keycloakId={}. User Service status={}, body={}",
+                    keycloakId,
+                    ex.status(),
+                    responseBody,
+                    ex
+            );
+
+            if (ex.status() == 404) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Không tìm thấy người dùng hoặc role DRIVER bên User Service",
+                        ex
+                );
+            }
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Đã lưu tài xế thất bại vì không gọi được User Service để đồng bộ role DRIVER",
+                    ex
+            );
+        } catch (ResponseStatusException ex) {
+            throw ex;
         } catch (Exception ex) {
+            log.error("Không đồng bộ được role DRIVER cho keycloakId={}", keycloakId, ex);
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
                     "Đã lưu tài xế thất bại vì không đồng bộ được role DRIVER",
+                    ex
+            );
+        }
+    }
+
+    private void syncDeletedDriverRole(String keycloakId) {
+        try {
+            var response = userInternalClient.downgradeDriverRoleToMember(keycloakId);
+            if (response != null && response.getErrorCode() != null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        response.getErrorMessage() == null
+                                ? "User Service trả lỗi khi đồng bộ role MEMBER"
+                                : response.getErrorMessage()
+                );
+            }
+        } catch (FeignException ex) {
+            log.error(
+                    "Không đồng bộ được role MEMBER sau khi xóa driver keycloakId={}. User Service status={}, body={}",
+                    keycloakId,
+                    ex.status(),
+                    ex.contentUTF8(),
+                    ex
+            );
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Đã xóa tài xế thất bại vì không đồng bộ được role MEMBER",
+                    ex
+            );
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Không đồng bộ được role MEMBER sau khi xóa driver keycloakId={}", keycloakId, ex);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Đã xóa tài xế thất bại vì không đồng bộ được role MEMBER",
                     ex
             );
         }

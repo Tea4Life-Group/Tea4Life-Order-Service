@@ -13,6 +13,8 @@ public interface DriverService {
 
     DriverResponse createDriver(UpsertDriverRequest request);
 
+    DriverResponse syncDriverFromUserRole(UpsertDriverRequest request);
+
     DriverResponse updateDriver(Long id, UpsertDriverRequest request);
 
     void deleteDriver(Long id);
