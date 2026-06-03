@@ -35,6 +35,7 @@ public class DriverServiceImpl implements DriverService {
     @Override
     @Transactional(readOnly = true)
     public List<DriverResponse> findAllDrivers() {
+        System.out.println("ĐÂY LÀ CODE MỚI CODE MỚI CODE MỚI CODE MỚI CODE MỚI CODE MỚI CODE MỚI");
         return driverRepository.findAll().stream()
                 .map(this::toDriverResponse)
                 .toList();
