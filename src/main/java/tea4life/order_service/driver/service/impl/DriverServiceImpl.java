@@ -141,6 +141,7 @@ public class DriverServiceImpl implements DriverService {
     }
 
     private void syncDriverRole(String keycloakId) {
+        System.out.println("ĐÂY LÀ CODE MỚI NÈ, ĐÃ SỬA LỖI KHÔNG ĐỒNG BỘ ROLE DRIVER KHI TẠO/UPDATE DRIVER");
         try {
             var response = userInternalClient.assignRole(keycloakId, DRIVER_ROLE);
             if (response != null && response.getErrorCode() != null) {
@@ -187,6 +188,7 @@ public class DriverServiceImpl implements DriverService {
     }
 
     private void syncDeletedDriverRole(String keycloakId) {
+        System.out.println("ĐÂY LÀ CODE MỚI NÈ, ĐÃ SỬA LỖI KHÔNG ĐỒNG BỘ ROLE DRIVER KHI TẠO/UPDATE DRIVER");
         try {
             var response = userInternalClient.downgradeDriverRoleToMember(keycloakId);
             if (response != null && response.getErrorCode() != null) {
